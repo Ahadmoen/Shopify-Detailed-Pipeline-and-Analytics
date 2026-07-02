@@ -1,4 +1,4 @@
-# Mine & Yours Analytics — Full Project Completion Report
+# Full Project Completion Report
 **Project:** Analytics & Reporting Pipeline
 **Client:** Mine & Yours (Luxury Resale)
 **Agency:** Buildberg
@@ -7,22 +7,6 @@
 
 ---
 
-## Executive Summary
-
-All three phases of the Mine & Yours Analytics project are complete. A fully automated data pipeline pulls data daily from Shopify, Meta Ads, Google Ads, and Klaviyo into BigQuery. Nine clean reporting views power eight Metabase dashboards covering every department scorecard.
-
----
-
-## Phase 2 — Tracking Audit ✅
-
-- Full conversion tracking audit delivered
-- Identified duplicate `page_view` firing 3× per page via Aimerce
-- Meta pixel missing browser-side (CAPI only)
-- No consent banner
-- Accurate Shopify conversion rate documented (~0.2%)
-- Written findings delivered to client
-
----
 
 ## Phase 3 — Data Pipelines & Modeling ✅
 
