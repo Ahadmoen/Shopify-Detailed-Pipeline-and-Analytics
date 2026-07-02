@@ -1,0 +1,622 @@
+{
+  "name": "Klaviyo \u2192 BigQuery (with Metrics)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 13
+            }
+          ]
+        }
+      },
+      "id": "7e79802d-a10f-4839-8403-3f313eb29fe7",
+      "name": "Daily 1pm Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        240,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ 'https://a.klaviyo.com/api/campaigns/?filter=and(equals(messages.channel,%27email%27),greater-than(updated_at,' + new Date(Date.now() - 86400000).toISOString().split('T')[0] + 'T00:00:00+00:00))' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Klaviyo-API-Key pk_UnPyCs_d48b1559b9ba4698584bb2c6ed2940237e"
+            },
+            {
+              "name": "revision",
+              "value": "2024-10-15"
+            }
+          ]
+        },
+        "options": {
+          "pagination": {}
+        }
+      },
+      "id": "ce2d3e33-a324-4945-928c-028acc75052e",
+      "name": "Get Campaigns",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        500,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const syncedAt = new Date().toISOString();\nconst allCampaigns = [];\nfor (const item of $input.all()) {\n  let campaigns = [];\n  try {\n    let raw = item.json.data;\n    if (typeof raw === 'string') raw = JSON.parse(raw);\n    if (raw && raw.data) { const d = raw.data; campaigns = Array.isArray(d) ? d : [d]; }\n    else if (Array.isArray(raw)) campaigns = raw;\n  } catch(e) { campaigns = []; }\n  for (const c of campaigns) {\n    if (!c || !c.id) continue;\n    const attrs = c.attributes || {};\n    const strategy = attrs.send_strategy || {};\n    const staticOpts = strategy.options_static || {};\n    allCampaigns.push({\n      campaign_id: c.id,\n      campaign_name: attrs.name || '',\n      status: attrs.status || '',\n      archived: attrs.archived || false,\n      send_time: staticOpts.datetime || attrs.send_time || null,\n      created_at: attrs.created_at || null,\n      updated_at: attrs.updated_at || null,\n      synced_at: syncedAt\n    });\n  }\n}\nif (allCampaigns.length === 0) return [{ json: { message: 'No campaigns', synced_at: syncedAt } }];\nreturn allCampaigns.map(c => ({ json: c }));"
+      },
+      "id": "a613018a-fd2f-4d90-8c94-92902e37358d",
+      "name": "Transform Campaigns",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        720,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "operation": "insert",
+        "projectId": "mine-and-yours-analytics",
+        "datasetId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "raw_marketing"
+        },
+        "tableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "klaviyo_campaigns"
+        },
+        "options": {}
+      },
+      "id": "4b27da5c-7a85-47d8-89bc-d65f897e1d35",
+      "name": "Insert Campaigns \u2192 BQ",
+      "type": "n8n-nodes-base.googleBigQuery",
+      "typeVersion": 2,
+      "position": [
+        960,
+        160
+      ],
+      "credentials": {
+        "googleApi": {
+          "id": "dFX4xttq1VAPhWrA",
+          "name": "Google BigQuery Main"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "https://a.klaviyo.com/api/lists/?fields[list]=name,created,updated",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Klaviyo-API-Key pk_UnPyCs_d48b1559b9ba4698584bb2c6ed2940237e"
+            },
+            {
+              "name": "revision",
+              "value": "2024-10-15"
+            }
+          ]
+        },
+        "options": {
+          "pagination": {}
+        }
+      },
+      "id": "dea93672-5190-49b1-9398-28cd19fa3393",
+      "name": "Get Lists",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        500,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const syncedAt = new Date().toISOString();\nconst today = new Date().toISOString().split('T')[0];\nconst allLists = [];\nfor (const item of $input.all()) {\n  let lists = [];\n  try {\n    let raw = item.json.data;\n    if (typeof raw === 'string') raw = JSON.parse(raw);\n    if (raw && raw.data) { const d = raw.data; lists = Array.isArray(d) ? d : [d]; }\n    else if (Array.isArray(raw)) lists = raw;\n  } catch(e) { lists = []; }\n  for (const l of lists) {\n    if (!l || !l.id) continue;\n    const attrs = l.attributes || {};\n    allLists.push({\n      date: today,\n      list_id: l.id,\n      list_name: attrs.name || '',\n      created: attrs.created || null,\n      updated: attrs.updated || null,\n      synced_at: syncedAt\n    });\n  }\n}\nif (allLists.length === 0) return [{ json: { message: 'No lists', synced_at: syncedAt } }];\nreturn allLists.map(l => ({ json: l }));"
+      },
+      "id": "da957c19-4161-42e8-9d5a-2d275b712c7f",
+      "name": "Transform Lists",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        720,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "operation": "insert",
+        "projectId": "mine-and-yours-analytics",
+        "datasetId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "raw_marketing"
+        },
+        "tableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "klaviyo_lists"
+        },
+        "options": {}
+      },
+      "id": "e42bc9ee-4937-4926-bfa1-cadc03d64441",
+      "name": "Insert Lists \u2192 BQ",
+      "type": "n8n-nodes-base.googleBigQuery",
+      "typeVersion": 2,
+      "position": [
+        960,
+        400
+      ],
+      "credentials": {
+        "googleApi": {
+          "id": "dFX4xttq1VAPhWrA",
+          "name": "Google BigQuery Main"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "={{ 'https://a.klaviyo.com/api/campaigns/?filter=and(equals(messages.channel,%27email%27),greater-than(updated_at,' + new Date(Date.now() - 86400000).toISOString().split('T')[0] + 'T00:00:00+00:00))' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Klaviyo-API-Key pk_UnPyCs_d48b1559b9ba4698584bb2c6ed2940237e"
+            },
+            {
+              "name": "revision",
+              "value": "2024-10-15"
+            }
+          ]
+        },
+        "options": {
+          "pagination": {}
+        }
+      },
+      "id": "9b747819-1212-49c4-b86b-df84fe6f9289",
+      "name": "Get Campaigns for Messages",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        500,
+        640
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const allCampaigns = [];\nfor (const item of $input.all()) {\n  let campaigns = [];\n  try {\n    let raw = item.json.data;\n    if (typeof raw === 'string') raw = JSON.parse(raw);\n    if (raw && raw.data) { const d = raw.data; campaigns = Array.isArray(d) ? d : [d]; }\n    else if (Array.isArray(raw)) campaigns = raw;\n  } catch(e) { campaigns = []; }\n  for (const c of campaigns) {\n    if (!c || !c.id) continue;\n    const attrs = c.attributes || {};\n    const strategy = attrs.send_strategy || {};\n    const staticOpts = strategy.options_static || {};\n    allCampaigns.push({ json: { campaign_id: c.id, campaign_name: attrs.name || '', send_time: staticOpts.datetime || null, status: attrs.status || '' } });\n  }\n}\nreturn allCampaigns;"
+      },
+      "id": "dbcde4ba-6a6d-4082-b9eb-7df9e1eeab1e",
+      "name": "Extract Campaign IDs",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        720,
+        640
+      ]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "d69ce412-ecbe-45cc-8ee0-445175f49951",
+      "name": "Loop Campaigns",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        960,
+        640
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://a.klaviyo.com/api/campaigns/{{ $json.campaign_id }}/campaign-messages/",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Klaviyo-API-Key pk_UnPyCs_d48b1559b9ba4698584bb2c6ed2940237e"
+            },
+            {
+              "name": "revision",
+              "value": "2024-10-15"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "348d0488-6312-4e6a-83f5-4313203316da",
+      "name": "Get Messages per Campaign",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1200,
+        720
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const syncedAt = new Date().toISOString();\nconst results = [];\nfor (const item of $input.all()) {\n  let messages = [];\n  try {\n    let raw = item.json.data;\n    if (typeof raw === 'string') raw = JSON.parse(raw);\n    if (raw && raw.data) { const d = raw.data; messages = Array.isArray(d) ? d : [d]; }\n    else if (Array.isArray(raw)) messages = raw;\n  } catch(e) { messages = []; }\n  for (const msg of messages) {\n    if (!msg || !msg.id) continue;\n    const attrs = msg.attributes || {};\n    const content = attrs.content || {};\n    const rels = msg.relationships || {};\n    const campaignRel = rels.campaign || {};\n    const campaignData = campaignRel.data || {};\n    results.push({ json: { message_id: msg.id, campaign_id: campaignData.id || '', subject_line: content.subject || '', from_email: content.from_email || '', from_label: content.from_label || '', synced_at: syncedAt } });\n  }\n}\nif (results.length === 0) return [{ json: { message: 'No messages', synced_at: syncedAt } }];\nreturn results;"
+      },
+      "id": "47e1b635-e1cc-4c54-8cec-03b7e0a7e9eb",
+      "name": "Transform Messages",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1440,
+        720
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "operation": "insert",
+        "projectId": "mine-and-yours-analytics",
+        "datasetId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "raw_marketing"
+        },
+        "tableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "klaviyo_campaign_messages"
+        },
+        "options": {}
+      },
+      "id": "8743fd94-57bd-4ffb-bc3f-d3e377a3b88b",
+      "name": "Insert Messages \u2192 BQ",
+      "type": "n8n-nodes-base.googleBigQuery",
+      "typeVersion": 2,
+      "position": [
+        1680,
+        640
+      ],
+      "credentials": {
+        "googleApi": {
+          "id": "dFX4xttq1VAPhWrA",
+          "name": "Google BigQuery Main"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "https://a.klaviyo.com/api/metrics/",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Klaviyo-API-Key pk_UnPyCs_d48b1559b9ba4698584bb2c6ed2940237e"
+            },
+            {
+              "name": "revision",
+              "value": "2024-10-15"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "km-get-metric",
+      "name": "Get Conversion Metric ID",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        500,
+        880
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = items[0].json;\nlet parsed = {};\nif (typeof raw.data === 'string') {\n  try { parsed = JSON.parse(raw.data); } catch(e) {}\n} else {\n  parsed = raw.data || raw;\n}\n\nlet metrics = [];\nif (Array.isArray(parsed.data)) metrics = parsed.data;\nelse if (Array.isArray(parsed)) metrics = parsed;\n\nlet metricId = null;\nfor (var i = 0; i < metrics.length; i++) {\n  var name = (metrics[i].attributes && metrics[i].attributes.name) || '';\n  if (name.toLowerCase().indexOf('placed order') !== -1) { metricId = metrics[i].id; break; }\n}\nif (!metricId && metrics.length > 0) metricId = metrics[0].id;\nif (!metricId) return [{ json: { error: 'No metric found', count: metrics.length } }];\nreturn [{ json: { conversion_metric_id: metricId, total_metrics: metrics.length } }];"
+      },
+      "id": "km-extract-metric",
+      "name": "Extract Metric ID",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        720,
+        880
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://a.klaviyo.com/api/campaign-values-reports/",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Klaviyo-API-Key pk_UnPyCs_d48b1559b9ba4698584bb2c6ed2940237e"
+            },
+            {
+              "name": "revision",
+              "value": "2024-10-15"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify($json.requestBody) }}",
+        "options": {}
+      },
+      "id": "km-post-report",
+      "name": "Get Campaign Metrics",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1080,
+        880
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const syncedAt = new Date().toISOString();\nconst today = new Date().toISOString().split('T')[0];\nconst results = [];\n\nfor (const item of $input.all()) {\n  let raw = item.json;\n  if (typeof raw.data === 'string') {\n    try { raw = JSON.parse(raw.data); } catch(e) {}\n  }\n\n  let reportResults = [];\n  if (raw.data && raw.data.attributes && raw.data.attributes.results) {\n    reportResults = raw.data.attributes.results;\n  } else if (raw.attributes && raw.attributes.results) {\n    reportResults = raw.attributes.results;\n  } else if (raw.results) {\n    reportResults = raw.results;\n  }\n\n  for (var i = 0; i < reportResults.length; i++) {\n    var r = reportResults[i];\n    var stats = r.statistics || {};\n    var groupings = r.groupings || {};\n\n    results.push({ json: {\n      date: today,\n      campaign_id: groupings.campaign_id || '',\n      campaign_name: '',\n      send_date: null,\n      sends: parseInt(stats.recipients || 0) || 0,\n      deliveries: 0,\n      opens: parseInt(stats.opens || 0) || 0,\n      unique_opens: parseInt(stats.opens_unique || 0) || 0,\n      open_rate: parseFloat(stats.open_rate || 0) || 0,\n      clicks: parseInt(stats.clicks || 0) || 0,\n      unique_clicks: parseInt(stats.clicks_unique || 0) || 0,\n      click_rate: parseFloat(stats.click_rate || 0) || 0,\n      unsubscribes: parseInt(stats.unsubscribes || 0) || 0,\n      bounces: 0,\n      revenue: parseFloat(stats.conversion_value || 0) || 0,\n      conversions: parseInt(stats.conversions || 0) || 0,\n      synced_at: syncedAt\n    }});\n  }\n}\n\nif (results.length === 0) return [{ json: { message: 'No metrics data', synced_at: syncedAt } }];\nreturn results;"
+      },
+      "id": "km-transform",
+      "name": "Transform Campaign Metrics",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1320,
+        880
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "operation": "insert",
+        "projectId": "mine-and-yours-analytics",
+        "datasetId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "raw_marketing"
+        },
+        "tableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "klaviyo_campaign_metrics"
+        },
+        "options": {}
+      },
+      "id": "km-bq",
+      "name": "Insert Metrics \u2192 BQ",
+      "type": "n8n-nodes-base.googleBigQuery",
+      "typeVersion": 2,
+      "position": [
+        1560,
+        880
+      ],
+      "credentials": {
+        "googleApi": {
+          "id": "dFX4xttq1VAPhWrA",
+          "name": "Google BigQuery Main"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const metricId = items[0].json.conversion_metric_id;\nif (!metricId) return [{ json: { error: 'No metric ID received', input: items[0].json } }];\n\nreturn [{ json: {\n  requestBody: {\n    data: {\n      type: \"campaign-values-report\",\n      attributes: {\n        timeframe: { key: \"last_30_days\" },\n        conversion_metric_id: metricId,\n        filter: \"equals(send_channel,'email')\",\n        statistics: [\n          \"opens\", \"opens_unique\", \"open_rate\",\n          \"clicks\", \"clicks_unique\", \"click_rate\",\n          \"unsubscribes\", \"unsubscribe_rate\",\n          \"recipients\", \"conversions\",\n          \"conversion_rate\", \"conversion_value\",\n          \"revenue_per_recipient\"\n        ]\n      }\n    }\n  }\n}}];"
+      },
+      "id": "km-build-body",
+      "name": "Build Request Body",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        840,
+        880
+      ]
+    }
+  ],
+  "connections": {
+    "Daily 1pm Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get Campaigns",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Lists",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Campaigns for Messages",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Conversion Metric ID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Campaigns": {
+      "main": [
+        [
+          {
+            "node": "Transform Campaigns",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transform Campaigns": {
+      "main": [
+        [
+          {
+            "node": "Insert Campaigns \u2192 BQ",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Lists": {
+      "main": [
+        [
+          {
+            "node": "Transform Lists",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transform Lists": {
+      "main": [
+        [
+          {
+            "node": "Insert Lists \u2192 BQ",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Campaigns for Messages": {
+      "main": [
+        [
+          {
+            "node": "Extract Campaign IDs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Campaign IDs": {
+      "main": [
+        [
+          {
+            "node": "Loop Campaigns",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Campaigns": {
+      "main": [
+        [
+          {
+            "node": "Insert Messages \u2192 BQ",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get Messages per Campaign",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Messages per Campaign": {
+      "main": [
+        [
+          {
+            "node": "Transform Messages",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transform Messages": {
+      "main": [
+        [
+          {
+            "node": "Loop Campaigns",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Conversion Metric ID": {
+      "main": [
+        [
+          {
+            "node": "Extract Metric ID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Metric ID": {
+      "main": [
+        [
+          {
+            "node": "Build Request Body",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Campaign Metrics": {
+      "main": [
+        [
+          {
+            "node": "Transform Campaign Metrics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transform Campaign Metrics": {
+      "main": [
+        [
+          {
+            "node": "Insert Metrics \u2192 BQ",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Request Body": {
+      "main": [
+        [
+          {
+            "node": "Get Campaign Metrics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "instanceId": "8cb571becb45836e8a44d1866949f895ec363ca3f69c545d19d13f3e85dd0baa"
+  }
+}

@@ -1,0 +1,331 @@
+{
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 13 * * *"
+            }
+          ]
+        }
+      },
+      "id": "3ab3c39f-689b-468d-9e97-8ea36413d151",
+      "name": "Daily 1PM Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [-896, 192]
+    },
+    {
+      "parameters": {
+        "url": "https://mine-yours-co.myshopify.com/admin/api/2024-01/products.json",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {"name": "updated_at_min", "value": "={{ new Date(Date.now() - 86400000).toISOString().split('T')[0] }}"},
+            {"name": "updated_at_max", "value": "={{ new Date().toISOString().split('T')[0] }}"}
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {"parameters": [{"name": "X-Shopify-Access-Token", "value": "REPLACE_WITH_SHOPIFY_ACCESS_TOKEN"}]},
+        "options": {"response": {"response": {"fullResponse": true, "responseFormat": "json"}}}
+      },
+      "id": "024b9b18-ff59-40be-8cb6-e1c4331f5cfd",
+      "name": "Get First Page",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-640, 192]
+    },
+    {
+      "parameters": {
+        "jsCode": "const resp = items[0].json;\nconst headers = resp.headers || {};\nconst body = resp.body || {};\nconst data = body.products || [];\nconst linkHeader = headers.link || headers['Link'] || '';\nconst nextMatch = linkHeader.match(/<([^>]+)>; rel=\"next\"/);\nconst nextUrl = nextMatch ? nextMatch[1] : null;\nreturn [{ json: { allData: data, nextUrl: nextUrl, pageCount: 1 } }];"
+      },
+      "id": "af0a12b0-0767-4db7-95c3-4af6838c6c9e",
+      "name": "Initialize Pagination",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-400, 192]
+    },
+    {
+      "parameters": {
+        "conditions": {"string": [{"value1": "={{ $json.nextUrl }}", "operation": "isNotEmpty"}]}
+      },
+      "id": "5faea8e9-2c9a-427a-864a-9b28a42f4173",
+      "name": "Has More Pages?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [-192, 192]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.nextUrl }}",
+        "sendHeaders": true,
+        "headerParameters": {"parameters": [{"name": "X-Shopify-Access-Token", "value": "REPLACE_WITH_SHOPIFY_ACCESS_TOKEN"}]},
+        "options": {"response": {"response": {"fullResponse": true, "responseFormat": "json"}}}
+      },
+      "id": "5c335a2f-3434-4b16-a438-63437b59f910",
+      "name": "Fetch Next Page",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "const prev = $node[\"Has More Pages?\"].json;\nconst curr = items[0].json;\nconst body = curr.body || {};\nconst newData = body.products || [];\nconst allData = prev.allData.concat(newData);\nconst headers = curr.headers || {};\nconst linkHeader = headers.link || headers['Link'] || '';\nconst nextMatch = linkHeader.match(/<([^>]+)>; rel=\"next\"/);\nconst nextUrl = nextMatch ? nextMatch[1] : null;\nif (prev.pageCount >= 100) return [{ json: { allData: allData, nextUrl: null, pageCount: prev.pageCount + 1 } }];\nreturn [{ json: { allData: allData, nextUrl: nextUrl, pageCount: prev.pageCount + 1 } }];"
+      },
+      "id": "481beb29-80f8-41d3-a450-0aa828f2e166",
+      "name": "Merge Pages",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [208, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "const all = items[0].json.allData || [];\nconst ids = [];\nfor (var i = 0; i < all.length; i++) {\n  var variants = all[i].variants || [];\n  for (var j = 0; j < variants.length; j++) {\n    var iid = variants[j].inventory_item_id;\n    if (iid) ids.push(iid.toString());\n  }\n}\nconst batches = [];\nfor (var i = 0; i < ids.length; i += 250) {\n  batches.push(ids.slice(i, i + 250).join(','));\n}\nreturn [{ json: { products: all, batches: batches, batchIdx: 0, costMap: {} } }];"
+      },
+      "id": "setup-inv-loop",
+      "name": "Setup Inventory Loop",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-192, 400]
+    },
+    {
+      "parameters": {
+        "conditions": {"number": [{"value1": "={{ $json.batchIdx }}", "operation": "smallerEqual", "value2": "={{ $json.batches.length - 1 }}"}]}
+      },
+      "id": "has-more-batches",
+      "name": "Has More Batches?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [60, 400]
+    },
+    {
+      "parameters": {
+        "url": "={{ 'https://mine-yours-co.myshopify.com/admin/api/2024-01/inventory_items.json?ids=' + $json.batches[$json.batchIdx] }}",
+        "sendHeaders": true,
+        "headerParameters": {"parameters": [{"name": "X-Shopify-Access-Token", "value": "REPLACE_WITH_SHOPIFY_ACCESS_TOKEN"}]},
+        "options": {"response": {"response": {"fullResponse": true, "responseFormat": "json"}}}
+      },
+      "id": "fetch-inv-items",
+      "name": "Fetch Inventory Items",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [280, 280]
+    },
+    {
+      "parameters": {
+        "jsCode": "const state = $node[\"Has More Batches?\"].json;\nconst resp = items[0].json;\nconst body = resp.body || resp;\nconst invItems = body.inventory_items || [];\nconst costMap = Object.assign({}, state.costMap);\nfor (var i = 0; i < invItems.length; i++) {\n  var item = invItems[i];\n  if (item && item.id !== undefined) {\n    costMap[item.id.toString()] = item.cost !== undefined && item.cost !== null ? parseFloat(item.cost) : null;\n  }\n}\nreturn [{ json: { products: state.products, batches: state.batches, batchIdx: state.batchIdx + 1, costMap: costMap } }];"
+      },
+      "id": "extract-costs",
+      "name": "Extract Costs",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [500, 280]
+    },
+    {
+      "parameters": {
+        "jsCode": "const today = new Date().toISOString().split('T')[0];\nconst state = items[0].json;\nconst all = state.products || state.allData || [];\nconst costMap = state.costMap || {};\nconst results = [];\nfor (var i = 0; i < all.length; i++) {\n  var p = all[i];\n  var variants = p.variants || [];\n  var fv = variants[0] || {};\n  var qty = variants.reduce(function(s, v) { return s + (parseInt(v.inventory_quantity) || 0); }, 0);\n  var imgs = p.images || [];\n  var inventoryItemId = (fv.inventory_item_id || '').toString();\n  var cost = costMap.hasOwnProperty(inventoryItemId) ? costMap[inventoryItemId] : null;\n  results.push({ json: {\n    date: today,\n    product_id: (p.id || '').toString(),\n    product_title: p.title || '',\n    product_description: p.body_html || '',\n    product_handle: p.handle || '',\n    product_image_src: imgs.length > 0 ? imgs[0].src : '',\n    product_inventory_quantity: qty,\n    product_price: parseFloat(fv.price) || 0,\n    product_status: (p.status || '').toUpperCase(),\n    product_tags: p.tags || '',\n    product_type: p.product_type || '',\n    product_created_at_datetime: p.created_at || null,\n    product_updated_at_datetime: p.updated_at || null,\n    product_variant_inventory_item_cost: cost,\n    product_vendor: p.vendor || ''\n  }});\n}\nif (results.length === 0) return [{ json: { message: 'No products found' } }];\nreturn results;"
+      },
+      "id": "e7e3b852-b8c6-4b3c-9071-164b8dc4fe56",
+      "name": "Transform",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [280, 560]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "operation": "insert",
+        "projectId": "mine-and-yours-analytics",
+        "datasetId": {"__rl": true, "mode": "id", "value": "raw_shopify"},
+        "tableId": {"__rl": true, "mode": "id", "value": "shopify_products"},
+        "options": {}
+      },
+      "id": "6ac3fc87-3e26-4336-9bde-91ef986c3b01",
+      "name": "Insert → BQ",
+      "type": "n8n-nodes-base.googleBigQuery",
+      "typeVersion": 2,
+      "position": [520, 560],
+      "credentials": {"googleApi": {"id": "dFX4xttq1VAPhWrA", "name": "Google BigQuery Main"}}
+    },
+    {
+      "parameters": {},
+      "id": "6f6e14a5-8c28-4944-928d-3aa111a33d68",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [-896, 1008]
+    },
+    {
+      "parameters": {
+        "url": "https://mine-yours-co.myshopify.com/admin/api/2024-01/products.json",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {"name": "created_at_min", "value": "2026-05-01"},
+            {"name": "created_at_max", "value": "2026-06-10"}
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {"parameters": [{"name": "X-Shopify-Access-Token", "value": "REPLACE_WITH_SHOPIFY_ACCESS_TOKEN"}]},
+        "options": {"response": {"response": {"fullResponse": true, "responseFormat": "json"}}}
+      },
+      "id": "29909778-6d0e-49f6-8e82-422756c32df0",
+      "name": "Get First Page1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-640, 1008]
+    },
+    {
+      "parameters": {
+        "jsCode": "const resp = items[0].json;\nconst headers = resp.headers || {};\nconst body = resp.body || {};\nconst data = body.products || [];\nconst linkHeader = headers.link || headers['Link'] || '';\nconst nextMatch = linkHeader.match(/<([^>]+)>; rel=\"next\"/);\nconst nextUrl = nextMatch ? nextMatch[1] : null;\nreturn [{ json: { allData: data, nextUrl: nextUrl, pageCount: 1 } }];"
+      },
+      "id": "f37e6fb5-bea8-4b62-90f8-951b6d699b6b",
+      "name": "Initialize Pagination1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-400, 1008]
+    },
+    {
+      "parameters": {
+        "conditions": {"string": [{"value1": "={{ $json.nextUrl }}", "operation": "isNotEmpty"}]}
+      },
+      "id": "41927341-cc8f-43cc-936f-a61b4416dfa5",
+      "name": "Has More Pages?1",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [-192, 1008]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.nextUrl }}",
+        "sendHeaders": true,
+        "headerParameters": {"parameters": [{"name": "X-Shopify-Access-Token", "value": "REPLACE_WITH_SHOPIFY_ACCESS_TOKEN"}]},
+        "options": {"response": {"response": {"fullResponse": true, "responseFormat": "json"}}}
+      },
+      "id": "f7d605fd-054f-4234-a62d-18d41568e20c",
+      "name": "Fetch Next Page1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [0, 816]
+    },
+    {
+      "parameters": {
+        "jsCode": "const prev = $node[\"Has More Pages?1\"].json;\nconst curr = items[0].json;\nconst body = curr.body || {};\nconst newData = body.products || [];\nconst allData = prev.allData.concat(newData);\nconst headers = curr.headers || {};\nconst linkHeader = headers.link || headers['Link'] || '';\nconst nextMatch = linkHeader.match(/<([^>]+)>; rel=\"next\"/);\nconst nextUrl = nextMatch ? nextMatch[1] : null;\nif (prev.pageCount >= 9999) return [{ json: { allData: allData, nextUrl: null, pageCount: prev.pageCount + 1 } }];\nreturn [{ json: { allData: allData, nextUrl: nextUrl, pageCount: prev.pageCount + 1 } }];"
+      },
+      "id": "1744f23f-2a16-4ecb-86e9-19f8404f593c",
+      "name": "Merge Pages1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [208, 816]
+    },
+    {
+      "parameters": {
+        "jsCode": "const all = items[0].json.allData || [];\nconst ids = [];\nfor (var i = 0; i < all.length; i++) {\n  var variants = all[i].variants || [];\n  for (var j = 0; j < variants.length; j++) {\n    var iid = variants[j].inventory_item_id;\n    if (iid) ids.push(iid.toString());\n  }\n}\nconst batches = [];\nfor (var i = 0; i < ids.length; i += 250) {\n  batches.push(ids.slice(i, i + 250).join(','));\n}\nreturn [{ json: { products: all, batches: batches, batchIdx: 0, costMap: {} } }];"
+      },
+      "id": "setup-inv-loop1",
+      "name": "Setup Inventory Loop1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-192, 1216]
+    },
+    {
+      "parameters": {
+        "conditions": {"number": [{"value1": "={{ $json.batchIdx }}", "operation": "smallerEqual", "value2": "={{ $json.batches.length - 1 }}"}]}
+      },
+      "id": "has-more-batches1",
+      "name": "Has More Batches?1",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [60, 1216]
+    },
+    {
+      "parameters": {
+        "url": "={{ 'https://mine-yours-co.myshopify.com/admin/api/2024-01/inventory_items.json?ids=' + $json.batches[$json.batchIdx] }}",
+        "sendHeaders": true,
+        "headerParameters": {"parameters": [{"name": "X-Shopify-Access-Token", "value": "REPLACE_WITH_SHOPIFY_ACCESS_TOKEN"}]},
+        "options": {"response": {"response": {"fullResponse": true, "responseFormat": "json"}}}
+      },
+      "id": "fetch-inv-items1",
+      "name": "Fetch Inventory Items1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [280, 1096]
+    },
+    {
+      "parameters": {
+        "jsCode": "const state = $node[\"Has More Batches?1\"].json;\nconst resp = items[0].json;\nconst body = resp.body || resp;\nconst invItems = body.inventory_items || [];\nconst costMap = Object.assign({}, state.costMap);\nfor (var i = 0; i < invItems.length; i++) {\n  var item = invItems[i];\n  if (item && item.id !== undefined) {\n    costMap[item.id.toString()] = item.cost !== undefined && item.cost !== null ? parseFloat(item.cost) : null;\n  }\n}\nreturn [{ json: { products: state.products, batches: state.batches, batchIdx: state.batchIdx + 1, costMap: costMap } }];"
+      },
+      "id": "extract-costs1",
+      "name": "Extract Costs1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [500, 1096]
+    },
+    {
+      "parameters": {
+        "jsCode": "const today = new Date().toISOString().split('T')[0];\nconst state = items[0].json;\nconst all = state.products || state.allData || [];\nconst costMap = state.costMap || {};\nconst results = [];\nfor (var i = 0; i < all.length; i++) {\n  var p = all[i];\n  var variants = p.variants || [];\n  var fv = variants[0] || {};\n  var qty = variants.reduce(function(s, v) { return s + (parseInt(v.inventory_quantity) || 0); }, 0);\n  var imgs = p.images || [];\n  var inventoryItemId = (fv.inventory_item_id || '').toString();\n  var cost = costMap.hasOwnProperty(inventoryItemId) ? costMap[inventoryItemId] : null;\n  results.push({ json: {\n    date: today,\n    product_id: (p.id || '').toString(),\n    product_title: p.title || '',\n    product_description: p.body_html || '',\n    product_handle: p.handle || '',\n    product_image_src: imgs.length > 0 ? imgs[0].src : '',\n    product_inventory_quantity: qty,\n    product_price: parseFloat(fv.price) || 0,\n    product_status: (p.status || '').toUpperCase(),\n    product_tags: p.tags || '',\n    product_type: p.product_type || '',\n    product_created_at_datetime: p.created_at || null,\n    product_updated_at_datetime: p.updated_at || null,\n    product_variant_inventory_item_cost: cost,\n    product_vendor: p.vendor || ''\n  }});\n}\nif (results.length === 0) return [{ json: { message: 'No products found' } }];\nreturn results;"
+      },
+      "id": "40f6b5c6-faf7-4f1e-b9aa-513cae85b4f0",
+      "name": "Transform1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [280, 1376]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "operation": "insert",
+        "projectId": "mine-and-yours-analytics",
+        "datasetId": {"__rl": true, "mode": "id", "value": "raw_shopify"},
+        "tableId": {"__rl": true, "mode": "id", "value": "shopify_products"},
+        "options": {}
+      },
+      "id": "43bf974b-db7c-42a4-9661-dce944d91b9c",
+      "name": "Insert → BQ1",
+      "type": "n8n-nodes-base.googleBigQuery",
+      "typeVersion": 2,
+      "position": [520, 1376],
+      "credentials": {"googleApi": {"id": "dFX4xttq1VAPhWrA", "name": "Google BigQuery Main"}}
+    }
+  ],
+  "connections": {
+    "Daily 1PM Trigger": {"main": [[{"node": "Get First Page", "type": "main", "index": 0}]]},
+    "Get First Page": {"main": [[{"node": "Initialize Pagination", "type": "main", "index": 0}]]},
+    "Initialize Pagination": {"main": [[{"node": "Has More Pages?", "type": "main", "index": 0}]]},
+    "Has More Pages?": {"main": [
+      [{"node": "Fetch Next Page", "type": "main", "index": 0}],
+      [{"node": "Setup Inventory Loop", "type": "main", "index": 0}]
+    ]},
+    "Fetch Next Page": {"main": [[{"node": "Merge Pages", "type": "main", "index": 0}]]},
+    "Merge Pages": {"main": [[{"node": "Has More Pages?", "type": "main", "index": 0}]]},
+    "Setup Inventory Loop": {"main": [[{"node": "Has More Batches?", "type": "main", "index": 0}]]},
+    "Has More Batches?": {"main": [
+      [{"node": "Fetch Inventory Items", "type": "main", "index": 0}],
+      [{"node": "Transform", "type": "main", "index": 0}]
+    ]},
+    "Fetch Inventory Items": {"main": [[{"node": "Extract Costs", "type": "main", "index": 0}]]},
+    "Extract Costs": {"main": [[{"node": "Has More Batches?", "type": "main", "index": 0}]]},
+    "Transform": {"main": [[{"node": "Insert → BQ", "type": "main", "index": 0}]]},
+    "Manual Trigger": {"main": [[{"node": "Get First Page1", "type": "main", "index": 0}]]},
+    "Get First Page1": {"main": [[{"node": "Initialize Pagination1", "type": "main", "index": 0}]]},
+    "Initialize Pagination1": {"main": [[{"node": "Has More Pages?1", "type": "main", "index": 0}]]},
+    "Has More Pages?1": {"main": [
+      [{"node": "Fetch Next Page1", "type": "main", "index": 0}],
+      [{"node": "Setup Inventory Loop1", "type": "main", "index": 0}]
+    ]},
+    "Fetch Next Page1": {"main": [[{"node": "Merge Pages1", "type": "main", "index": 0}]]},
+    "Merge Pages1": {"main": [[{"node": "Has More Pages?1", "type": "main", "index": 0}]]},
+    "Setup Inventory Loop1": {"main": [[{"node": "Has More Batches?1", "type": "main", "index": 0}]]},
+    "Has More Batches?1": {"main": [
+      [{"node": "Fetch Inventory Items1", "type": "main", "index": 0}],
+      [{"node": "Transform1", "type": "main", "index": 0}]
+    ]},
+    "Fetch Inventory Items1": {"main": [[{"node": "Extract Costs1", "type": "main", "index": 0}]]},
+    "Extract Costs1": {"main": [[{"node": "Has More Batches?1", "type": "main", "index": 0}]]},
+    "Transform1": {"main": [[{"node": "Insert → BQ1", "type": "main", "index": 0}]]}
+  },
+  "pinData": {},
+  "meta": {"instanceId": "8cb571becb45836e8a44d1866949f895ec363ca3f69c545d19d13f3e85dd0baa"}
+}

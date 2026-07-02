@@ -1,0 +1,578 @@
+{
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -2208,
+        672
+      ],
+      "id": "4dff0ca8-a93a-4a04-aff5-473168a7a88c",
+      "name": "When clicking 'Execute workflow'"
+    },
+    {
+      "parameters": {
+        "url": "https://mine-yours-co.myshopify.com/admin/api/2024-01/orders.json",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "status",
+              "value": "any"
+            },
+            {
+              "name": "created_at_min",
+              "value": "2026-05-01"
+            },
+            {
+              "name": "created_at_max",
+              "value": "2026-06-01"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Shopify-Access-Token",
+              "value": "REPLACE_WITH_SHOPIFY_ACCESS_TOKEN"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "ee330b78-489c-4176-9eaf-9c45a30fcbbf",
+      "name": "Get First Page1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1952,
+        672
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const resp = items[0].json;\nconst headers = resp.headers || {};\nconst body = resp.body || {};\nconst data = body.orders || [];\nconst linkHeader = headers.link || headers['Link'] || '';\nconst nextMatch = linkHeader.match(/<([^>]+)>; rel=\"next\"/);\nconst nextUrl = nextMatch ? nextMatch[1] : null;\nreturn [{ json: { allData: data, nextUrl: nextUrl, pageCount: 1 } }];"
+      },
+      "id": "2facc3ab-5565-471e-8c68-b5e3c95c6bee",
+      "name": "Initialize Pagination1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1712,
+        672
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.nextUrl }}",
+              "operation": "isNotEmpty"
+            }
+          ]
+        }
+      },
+      "id": "059bbbda-e907-43e6-9ee8-1fcb5957d515",
+      "name": "Has More Pages?1",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        -1504,
+        672
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.nextUrl }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Shopify-Access-Token",
+              "value": "REPLACE_WITH_SHOPIFY_ACCESS_TOKEN"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "9ab28a21-ef37-4a33-8517-ee740e8eef51",
+      "name": "Fetch Next Page1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1312,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const prev = $node[\"Has More Pages?1\"].json;\nconst curr = items[0].json;\nconst body = curr.body || {};\nconst newData = body.orders || [];\nconst allData = prev.allData.concat(newData);\nconst headers = curr.headers || {};\nconst linkHeader = headers.link || headers['Link'] || '';\nconst nextMatch = linkHeader.match(/<([^>]+)>; rel=\"next\"/);\nconst nextUrl = nextMatch ? nextMatch[1] : null;\nif (prev.pageCount >= 100) return [{ json: { allData: allData, nextUrl: null, pageCount: prev.pageCount + 1 } }];\nreturn [{ json: { allData: allData, nextUrl: nextUrl, pageCount: prev.pageCount + 1 } }];"
+      },
+      "id": "57c3d42a-12a6-45f4-95a4-8cc25d8eeb74",
+      "name": "Merge Pages1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1104,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "operation": "insert",
+        "projectId": "mine-and-yours-analytics",
+        "datasetId": {
+          "__rl": true,
+          "value": "raw_shopify",
+          "mode": "id"
+        },
+        "tableId": {
+          "__rl": true,
+          "value": "shopify_orders",
+          "mode": "id"
+        },
+        "options": {}
+      },
+      "id": "58e51f50-9811-465a-a4ba-ca4601f1323c",
+      "name": "Insert \u2192 BQ1",
+      "type": "n8n-nodes-base.googleBigQuery",
+      "typeVersion": 2,
+      "position": [
+        -1024,
+        784
+      ],
+      "credentials": {
+        "googleApi": {
+          "id": "9yMTlg9EcavxGxfO",
+          "name": "Google BigQuery"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "operation": "insert",
+        "projectId": "mine-and-yours-analytics",
+        "datasetId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "raw_shopify"
+        },
+        "tableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "shopify_orders"
+        },
+        "options": {}
+      },
+      "id": "995f7873-014c-4e98-8d2e-c3d340d7e066",
+      "name": "Insert \u2192 BQ",
+      "type": "n8n-nodes-base.googleBigQuery",
+      "typeVersion": 2,
+      "position": [
+        -1072,
+        176
+      ],
+      "credentials": {
+        "googleApi": {
+          "id": "9yMTlg9EcavxGxfO",
+          "name": "Google BigQuery"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "operation": "insert",
+        "projectId": "mine-and-yours-analytics",
+        "datasetId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "raw_shopify"
+        },
+        "tableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "shopify_orders"
+        },
+        "options": {}
+      },
+      "id": "acf81a1f-14f6-4361-be8e-5e862a407605",
+      "name": "Insert \u2192 BQ",
+      "type": "n8n-nodes-base.googleBigQuery",
+      "typeVersion": 2,
+      "position": [
+        -1072,
+        176
+      ],
+      "credentials": {
+        "googleApi": {
+          "id": "9yMTlg9EcavxGxfO",
+          "name": "Google BigQuery"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const prev = $node[\"Has More Pages?\"].json;\nconst curr = items[0].json;\nconst body = curr.body || {};\nconst newData = body.orders || [];\nconst allData = prev.allData.concat(newData);\nconst headers = curr.headers || {};\nconst linkHeader = headers.link || headers['Link'] || '';\nconst nextMatch = linkHeader.match(/<([^>]+)>; rel=\"next\"/);\nconst nextUrl = nextMatch ? nextMatch[1] : null;\nif (prev.pageCount >= 100) return [{ json: { allData: allData, nextUrl: null, pageCount: prev.pageCount + 1 } }];\nreturn [{ json: { allData: allData, nextUrl: nextUrl, pageCount: prev.pageCount + 1 } }];"
+      },
+      "id": "15fb00e1-e8e5-4724-ae9e-e599c8242906",
+      "name": "Merge Pages",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1120,
+        -224
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.nextUrl }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Shopify-Access-Token",
+              "value": "REPLACE_WITH_SHOPIFY_ACCESS_TOKEN"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "425963b0-cef2-4103-8419-505f7a64aa0f",
+      "name": "Fetch Next Page",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1328,
+        -224
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.nextUrl }}",
+              "operation": "isNotEmpty"
+            }
+          ]
+        }
+      },
+      "id": "132ff3fc-26f7-44b5-ba04-eada67acdaae",
+      "name": "Has More Pages?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        -1520,
+        -32
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const resp = items[0].json;\nconst headers = resp.headers || {};\nconst body = resp.body || {};\nconst data = body.orders || [];\nconst linkHeader = headers.link || headers['Link'] || '';\nconst nextMatch = linkHeader.match(/<([^>]+)>; rel=\"next\"/);\nconst nextUrl = nextMatch ? nextMatch[1] : null;\nreturn [{ json: { allData: data, nextUrl: nextUrl, pageCount: 1 } }];"
+      },
+      "id": "fc107399-c075-4a8f-8011-1318abfb5065",
+      "name": "Initialize Pagination",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1728,
+        -32
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://mine-yours-co.myshopify.com/admin/api/2024-01/orders.json",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "status",
+              "value": "any"
+            },
+            {
+              "name": "updated_at_min",
+              "value": "={{ new Date(Date.now() - 172800000).toISOString().split('T')[0] }}"
+            },
+            {
+              "name": "updated_at_max",
+              "value": "={{ new Date().toISOString().split('T')[0] }}"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Shopify-Access-Token",
+              "value": "REPLACE_WITH_SHOPIFY_ACCESS_TOKEN"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "504f66c4-aaa6-4b9a-868f-38298fd5e7f4",
+      "name": "Get First Page",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1968,
+        -32
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 13 * * *"
+            }
+          ]
+        }
+      },
+      "id": "3a7fd1e8-e71e-4ac8-bd1b-d8cf4c987255",
+      "name": "Daily 1PM Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -2224,
+        -32
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const today = new Date().toISOString().split('T')[0];\nconst all = items[0].json.allData || [];\nconst results = [];\nvar appMap = {'web':'Online Store','pos':'Point of Sale','mobile':'Shop','shopify_draft_order':'Draft Orders','iphone':'Shop','android':'Shop'};\nvar locationMap = {\n  '61845110897': '2061 West 4th Ave',\n  '34791915633': '418 Davie Street, Vancouver',\n  '70972768369': '486 Front St W - The Well, Toronto',\n  '69315657841': '510 8 Ave SW - Holt Renfrew, Calgary',\n  '61826072689': '79 Yorkville, Toronto',\n  '42702532': '1025 Howe Street, Vancouver',\n  '61808017521': 'Consignment - Real Real',\n  '61822697585': \"Courtney's Closet\",\n  '191632': 'Storage Locker',\n  '61841834097': 'West 4th - Back of House (Archived)'\n};\nfunction getApp(s){ return appMap[s] || s || 'Unknown'; }\nfunction getLocationName(id){ return id ? (locationMap[id.toString()] || 'Unknown Location') : null; }\nfunction getWeek(ds){\n  var d=new Date(ds); d.setHours(0,0,0,0);\n  d.setDate(d.getDate()+3-(d.getDay()+6)%7);\n  var w=new Date(d.getFullYear(),0,4);\n  return 1+Math.round(((d-w)/86400000-3+(w.getDay()+6)%7)/7);\n}\nfor (var i = 0; i < all.length; i++) {\n  var o = all[i];\n  var cat = o.created_at || '';\n  var od = cat.split('T')[0] || today;\n  var dobj = new Date(cat);\n  var yr = dobj.getFullYear().toString();\n  var mo = ('0'+(dobj.getMonth()+1)).slice(-2);\n  var wk = getWeek(cat).toString();\n  var ym = yr+'|'+(dobj.getMonth()+1);\n  var lis = o.line_items || [];\n  var tqty = lis.reduce(function(s,l){return s+(l.quantity||0);},0);\n  var sa = o.shipping_address || {};\n  var sl = o.shipping_lines || [];\n  var sp = sl.length > 0 ? parseFloat(sl[0].price)||0 : 0;\n  var locId = o.location_id ? o.location_id.toString() : null;\n  var custId = o.customer ? o.customer.id.toString() : null;\n  var base = {\n    account_name:'mine-yours-co.myshopify.com', date:od, month:mo,\n    order_app_name:getApp(o.source_name), order_created_at:cat, order_currency:o.currency||'',\n    order_customer_last_visit_utm_campaign:null, order_customer_last_visit_utm_medium:null,\n    order_customer_last_visit_utm_source:null,\n    order_financial_status:(o.financial_status||'').toUpperCase(),\n    order_id:(o.id||'').toString(), order_name:o.name||'',\n    order_net_sales:parseFloat(o.subtotal_price)||0, order_processed_at:o.processed_at||null,\n    order_quantity:tqty, order_shipping_address_country:sa.country||null,\n    order_shipping_address_province:sa.province||null, order_shipping_price:sp,\n    order_subtotal_price:parseFloat(o.subtotal_price)||0,\n    order_test:o.test?'True':'False',\n    order_total_discounts:parseFloat(o.total_discounts)||0,\n    order_total_price:parseFloat(o.total_price)||0,\n    source:'shopify', week:wk, year:yr, year_month:ym,\n    order_total_tax_amount:parseFloat(o.total_tax)||0,\n    order_location_id:locId,\n    order_location_name:getLocationName(locId),\n    order_customer_id:custId\n  };\n  if (lis.length === 0) {\n    results.push({json: Object.assign({}, base, {line_item__id:null,line_item__price:null,line_item__product_id:null,line_item__quantity:null,line_item__sku:null,line_item__title:null,line_item__total_discount:null,line_item__variant_unit_cost:null,line_item__vendor:null})});\n  } else {\n    for (var j=0;j<lis.length;j++){\n      var li=lis[j];\n      results.push({json: Object.assign({}, base, {\n        line_item__id:(li.id||'').toString(), line_item__price:parseFloat(li.price)||0,\n        line_item__product_id:(li.product_id||'').toString(), line_item__quantity:li.quantity||0,\n        line_item__sku:li.sku||'', line_item__title:li.title||'',\n        line_item__total_discount:parseFloat(li.total_discount)||0,\n        line_item__variant_unit_cost:null, line_item__vendor:li.vendor||''\n      })});\n    }\n  }\n}\nif (results.length === 0) return [{json:{message:'No orders updated in last 2 days'}}];\nreturn results;"
+      },
+      "id": "e85c7ce1-61b1-40f6-8182-17d13a381a77",
+      "name": "Transform",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1328,
+        176
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const today = new Date().toISOString().split('T')[0];\nconst all = items[0].json.allData || [];\nconst results = [];\nvar appMap = {'web':'Online Store','pos':'Point of Sale','mobile':'Shop','shopify_draft_order':'Draft Orders','iphone':'Shop','android':'Shop'};\nvar locationMap = {\n  '61845110897': '2061 West 4th Ave',\n  '34791915633': '418 Davie Street, Vancouver',\n  '70972768369': '486 Front St W - The Well, Toronto',\n  '69315657841': '510 8 Ave SW - Holt Renfrew, Calgary',\n  '61826072689': '79 Yorkville, Toronto',\n  '42702532': '1025 Howe Street, Vancouver',\n  '61808017521': 'Consignment - Real Real',\n  '61822697585': \"Courtney's Closet\",\n  '191632': 'Storage Locker',\n  '61841834097': 'West 4th - Back of House (Archived)'\n};\nfunction getApp(s){ return appMap[s] || s || 'Unknown'; }\nfunction getLocationName(id){ return id ? (locationMap[id.toString()] || 'Unknown Location') : null; }\nfunction getWeek(ds){\n  var d=new Date(ds); d.setHours(0,0,0,0);\n  d.setDate(d.getDate()+3-(d.getDay()+6)%7);\n  var w=new Date(d.getFullYear(),0,4);\n  return 1+Math.round(((d-w)/86400000-3+(w.getDay()+6)%7)/7);\n}\nfor (var i = 0; i < all.length; i++) {\n  var o = all[i];\n  var cat = o.created_at || '';\n  var od = cat.split('T')[0] || today;\n  var dobj = new Date(cat);\n  var yr = dobj.getFullYear().toString();\n  var mo = ('0'+(dobj.getMonth()+1)).slice(-2);\n  var wk = getWeek(cat).toString();\n  var ym = yr+'|'+(dobj.getMonth()+1);\n  var lis = o.line_items || [];\n  var tqty = lis.reduce(function(s,l){return s+(l.quantity||0);},0);\n  var sa = o.shipping_address || {};\n  var sl = o.shipping_lines || [];\n  var sp = sl.length > 0 ? parseFloat(sl[0].price)||0 : 0;\n  var locId = o.location_id ? o.location_id.toString() : null;\n  var custId = o.customer ? o.customer.id.toString() : null;\n  var base = {\n    account_name:'mine-yours-co.myshopify.com', date:od, month:mo,\n    order_app_name:getApp(o.source_name), order_created_at:cat, order_currency:o.currency||'',\n    order_customer_last_visit_utm_campaign:null, order_customer_last_visit_utm_medium:null,\n    order_customer_last_visit_utm_source:null,\n    order_financial_status:(o.financial_status||'').toUpperCase(),\n    order_id:(o.id||'').toString(), order_name:o.name||'',\n    order_net_sales:parseFloat(o.subtotal_price)||0, order_processed_at:o.processed_at||null,\n    order_quantity:tqty, order_shipping_address_country:sa.country||null,\n    order_shipping_address_province:sa.province||null, order_shipping_price:sp,\n    order_subtotal_price:parseFloat(o.subtotal_price)||0,\n    order_test:o.test?'True':'False',\n    order_total_discounts:parseFloat(o.total_discounts)||0,\n    order_total_price:parseFloat(o.total_price)||0,\n    source:'shopify', week:wk, year:yr, year_month:ym,\n    order_total_tax_amount:parseFloat(o.total_tax)||0,\n    order_location_id:locId,\n    order_location_name:getLocationName(locId),\n    order_customer_id:custId\n  };\n  if (lis.length === 0) {\n    results.push({json: Object.assign({}, base, {line_item__id:null,line_item__price:null,line_item__product_id:null,line_item__quantity:null,line_item__sku:null,line_item__title:null,line_item__total_discount:null,line_item__variant_unit_cost:null,line_item__vendor:null})});\n  } else {\n    for (var j=0;j<lis.length;j++){\n      var li=lis[j];\n      results.push({json: Object.assign({}, base, {\n        line_item__id:(li.id||'').toString(), line_item__price:parseFloat(li.price)||0,\n        line_item__product_id:(li.product_id||'').toString(), line_item__quantity:li.quantity||0,\n        line_item__sku:li.sku||'', line_item__title:li.title||'',\n        line_item__total_discount:parseFloat(li.total_discount)||0,\n        line_item__variant_unit_cost:null, line_item__vendor:li.vendor||''\n      })});\n    }\n  }\n}\nif (results.length === 0) return [{json:{message:'No orders found'}}];\nreturn results;"
+      },
+      "id": "4c91c235-25b0-4585-9f16-d93ccfa15840",
+      "name": "Transform1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1280,
+        784
+      ]
+    }
+  ],
+  "connections": {
+    "When clicking 'Execute workflow'": {
+      "main": [
+        [
+          {
+            "node": "Get First Page1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get First Page1": {
+      "main": [
+        [
+          {
+            "node": "Initialize Pagination1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Initialize Pagination1": {
+      "main": [
+        [
+          {
+            "node": "Has More Pages?1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has More Pages?1": {
+      "main": [
+        [
+          {
+            "node": "Fetch Next Page1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Transform1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Next Page1": {
+      "main": [
+        [
+          {
+            "node": "Merge Pages1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Pages1": {
+      "main": [
+        [
+          {
+            "node": "Has More Pages?1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transform1": {
+      "main": [
+        [
+          {
+            "node": "Insert \u2192 BQ1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transform": {
+      "main": [
+        [
+          {
+            "node": "Insert \u2192 BQ",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Pages": {
+      "main": [
+        [
+          {
+            "node": "Has More Pages?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Next Page": {
+      "main": [
+        [
+          {
+            "node": "Merge Pages",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has More Pages?": {
+      "main": [
+        [
+          {
+            "node": "Fetch Next Page",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Transform",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Initialize Pagination": {
+      "main": [
+        [
+          {
+            "node": "Has More Pages?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get First Page": {
+      "main": [
+        [
+          {
+            "node": "Initialize Pagination",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Daily 1PM Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get First Page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "b525fd4ace0e58fcd197935f6c65d8b7e3739f1004deaa7ce4c1ef49a7560426"
+  }
+}

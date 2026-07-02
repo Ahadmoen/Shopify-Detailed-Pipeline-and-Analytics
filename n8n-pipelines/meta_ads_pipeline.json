@@ -1,0 +1,164 @@
+{
+  "name": "Meta Ads → BigQuery (Mine & Yours)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {"interval": [{"triggerAtHour": 13}]}
+      },
+      "id": "schedule-trigger",
+      "name": "Daily 1PM Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [-816, 112]
+    },
+    {
+      "parameters": {
+        "graphApiVersion": "v23.0",
+        "node": "act_2626840940790152",
+        "edge": "insights",
+        "options": {
+          "fields": {
+            "field": [
+              {"name": "ad_id"},
+              {"name": "ad_name"},
+              {"name": "campaign_id"},
+              {"name": "campaign_name"},
+              {"name": "adset_id"},
+              {"name": "adset_name"},
+              {"name": "spend"},
+              {"name": "impressions"},
+              {"name": "clicks"},
+              {"name": "reach"},
+              {"name": "actions"},
+              {"name": "action_values"},
+              {"name": "account_currency"}
+            ]
+          },
+          "queryParameters": {
+            "parameter": [
+              {"name": "date_preset", "value": "yesterday"},
+              {"name": "level", "value": "ad"},
+              {"name": "limit", "value": "500"}
+            ]
+          }
+        }
+      },
+      "id": "fb-graph-api",
+      "name": "Facebook Graph API",
+      "type": "n8n-nodes-base.facebookGraphApi",
+      "typeVersion": 1,
+      "position": [-480, 112],
+      "credentials": {
+        "facebookGraphApi": {
+          "id": "WLAJbAY6DkV7vlxm",
+          "name": "Facebook Graph acc 1"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = items[0].json;\nlet allData = response.data || [];\nconst nextUrl = response.paging?.next || null;\nreturn [{ json: { allData: allData, nextUrl: nextUrl, pageCount: 1 } }];"
+      },
+      "id": "init-pagination",
+      "name": "Initialize Pagination",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-320, 112]
+    },
+    {
+      "parameters": {
+        "conditions": {"string": [{"value1": "={{ $json.nextUrl }}", "operation": "isNotEmpty"}]}
+      },
+      "id": "has-more-pages",
+      "name": "Has More Pages?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [-160, 112]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.nextUrl }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "facebookGraphApi",
+        "options": {}
+      },
+      "id": "fetch-next-page",
+      "name": "Fetch Next Page",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [0, 0],
+      "credentials": {
+        "facebookGraphApi": {
+          "id": "WLAJbAY6DkV7vlxm",
+          "name": "Facebook Graph acc 1"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const previousNode = $node[\"Has More Pages?\"].json;\nconst previousData = previousNode.allData || [];\nconst pageCount = previousNode.pageCount || 1;\nconst currentResponse = items[0].json;\nconst newData = currentResponse.data || [];\nconst allData = [...previousData, ...newData];\nconst nextUrl = currentResponse.paging?.next || null;\nif (pageCount >= 50) {\n  return [{ json: { allData: allData, nextUrl: null, pageCount: pageCount + 1 } }];\n}\nreturn [{ json: { allData: allData, nextUrl: nextUrl, pageCount: pageCount + 1 } }];"
+      },
+      "id": "merge-pages",
+      "name": "Merge Pages",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [160, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "const allData = items[0].json.allData || [];\nif (allData.length === 0) return [{ json: { message: 'No data for yesterday' } }];\nreturn allData.map(item => ({ json: item }));"
+      },
+      "id": "prepare-final-data",
+      "name": "Prepare Final Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [0, 208]
+    },
+    {
+      "parameters": {
+        "jsCode": "const syncedAt = new Date().toISOString();\nreturn items.map(item => {\n  const d = item.json;\n\n  // Extract purchases from actions\n  const purchaseAction = (d.actions || []).find(a => a.action_type === 'purchase');\n  const purchases = purchaseAction ? parseInt(purchaseAction.value) || 0 : 0;\n\n  // Extract purchase value from action_values\n  const purchaseValueAction = (d.action_values || []).find(a => a.action_type === 'purchase');\n  const purchaseValue = purchaseValueAction ? parseFloat(purchaseValueAction.value) || 0 : 0;\n\n  // Calculate ROAS\n  const spend = parseFloat(d.spend) || 0;\n  const roas = spend > 0 ? Math.round((purchaseValue / spend) * 100) / 100 : 0;\n\n  return { json: {\n    date: d.date_start,\n    campaign_id: d.campaign_id || '',\n    campaign_name: d.campaign_name || '',\n    adset_id: d.adset_id || '',\n    adset_name: d.adset_name || '',\n    ad_id: d.ad_id || '',\n    ad_name: d.ad_name || '',\n    spend: spend,\n    impressions: parseInt(d.impressions) || 0,\n    clicks: parseInt(d.clicks) || 0,\n    reach: parseInt(d.reach) || 0,\n    purchases: purchases,\n    purchase_value: purchaseValue,\n    purchase_roas: roas,\n    account_currency: d.account_currency || 'CAD',\n    synced_at: syncedAt\n  }};\n});"
+      },
+      "id": "transform",
+      "name": "Transform",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [320, 208]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "operation": "insert",
+        "projectId": "mine-and-yours-analytics",
+        "datasetId": {"__rl": true, "mode": "id", "value": "raw_marketing"},
+        "tableId": {"__rl": true, "mode": "id", "value": "meta_ads"},
+        "options": {}
+      },
+      "id": "insert-bq",
+      "name": "Insert → BQ",
+      "type": "n8n-nodes-base.googleBigQuery",
+      "typeVersion": 2,
+      "position": [560, 208],
+      "credentials": {
+        "googleApi": {
+          "id": "dFX4xttq1VAPhWrA",
+          "name": "Google BigQuery Main"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Daily 1PM Trigger": {"main": [[{"node": "Facebook Graph API", "type": "main", "index": 0}]]},
+    "Facebook Graph API": {"main": [[{"node": "Initialize Pagination", "type": "main", "index": 0}]]},
+    "Initialize Pagination": {"main": [[{"node": "Has More Pages?", "type": "main", "index": 0}]]},
+    "Has More Pages?": {"main": [
+      [{"node": "Fetch Next Page", "type": "main", "index": 0}],
+      [{"node": "Prepare Final Data", "type": "main", "index": 0}]
+    ]},
+    "Fetch Next Page": {"main": [[{"node": "Merge Pages", "type": "main", "index": 0}]]},
+    "Merge Pages": {"main": [[{"node": "Has More Pages?", "type": "main", "index": 0}]]},
+    "Prepare Final Data": {"main": [[{"node": "Transform", "type": "main", "index": 0}]]},
+    "Transform": {"main": [[{"node": "Insert → BQ", "type": "main", "index": 0}]]}
+  },
+  "pinData": {},
+  "meta": {"instanceId": "8cb571becb45836e8a44d1866949f895ec363ca3f69c545d19d13f3e85dd0baa"}
+}

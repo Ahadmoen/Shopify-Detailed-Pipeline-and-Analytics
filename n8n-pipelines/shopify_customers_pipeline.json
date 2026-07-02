@@ -1,0 +1,536 @@
+{
+  "nodes": [
+    {
+      "parameters": {
+        "url": "https://mine-yours-co.myshopify.com/admin/api/2024-01/customers.json",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "updated_at_min",
+              "value": "={{ new Date(Date.now() - 86400000).toISOString().split('T')[0] }}"
+            },
+            {
+              "name": "updated_at_max",
+              "value": "={{ new Date().toISOString().split('T')[0] }}"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Shopify-Access-Token",
+              "value": "REPLACE_WITH_SHOPIFY_ACCESS_TOKEN"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "858b807d-dd0d-4eee-8b89-7509a2094e85",
+      "name": "Get First Page",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        656,
+        880
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const resp = items[0].json;\nconst headers = resp.headers || {};\nconst body = resp.body || {};\nconst data = body.customers || [];\nconst linkHeader = headers.link || headers['Link'] || '';\nconst nextMatch = linkHeader.match(/<([^>]+)>; rel=\"next\"/);\nconst nextUrl = nextMatch ? nextMatch[1] : null;\nreturn [{ json: { allData: data, nextUrl: nextUrl, pageCount: 1 } }];"
+      },
+      "id": "c1b7b9de-d688-4345-8b12-e6e461a47cdc",
+      "name": "Initialize Pagination",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        896,
+        880
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.nextUrl }}",
+              "operation": "isNotEmpty"
+            }
+          ]
+        }
+      },
+      "id": "3a04af5d-c860-4551-ac10-2d1336ef2ba1",
+      "name": "Has More Pages?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        1104,
+        880
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.nextUrl }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Shopify-Access-Token",
+              "value": "REPLACE_WITH_SHOPIFY_ACCESS_TOKEN"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "2181a755-7035-467f-a420-ee5fe659be5c",
+      "name": "Fetch Next Page",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1296,
+        688
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const prev = $node[\"Has More Pages?\"].json;\nconst curr = items[0].json;\nconst body = curr.body || {};\nconst newData = body.customers || [];\nconst allData = prev.allData.concat(newData);\nconst headers = curr.headers || {};\nconst linkHeader = headers.link || headers['Link'] || '';\nconst nextMatch = linkHeader.match(/<([^>]+)>; rel=\"next\"/);\nconst nextUrl = nextMatch ? nextMatch[1] : null;\nif (prev.pageCount >= 100) return [{ json: { allData: allData, nextUrl: null, pageCount: prev.pageCount + 1 } }];\nreturn [{ json: { allData: allData, nextUrl: nextUrl, pageCount: prev.pageCount + 1 } }];"
+      },
+      "id": "a64716db-db30-4633-b02a-c88d77b06222",
+      "name": "Merge Pages",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1504,
+        688
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const today = new Date().toISOString().split('T')[0];\nconst all = items[0].json.allData || [];\nconst results = [];\nfor (var i = 0; i < all.length; i++) {\n  var c = all[i];\n  var ordersCount = parseInt(c.orders_count) || 0;\n  var totalSpent = parseFloat(c.total_spent) || 0;\n  var addr = c.default_address || {};\n  results.push({ json: {\n    date: today,\n    customer_id: (c.id || '').toString(),\n    customer_first_name: c.first_name || '',\n    customer_last_name: c.last_name || '',\n    customer_created_at: c.created_at || null,\n    customer_updated_at: c.updated_at || null,\n    customer_currency: c.currency || '',\n    customer_default_address_city: addr.city || '',\n    customer_default_address_country: addr.country || '',\n    customer_default_address_country_code: addr.country_code || '',\n    customer_orders_count: ordersCount,\n    customer_total_spent: totalSpent,\n    customer_aov: ordersCount > 0 ? totalSpent / ordersCount : 0,\n    customer_is_returning: ordersCount > 1 ? 'True' : 'False',\n    customer_tags: c.tags || ''\n  }});\n}\nif (results.length === 0) return [{ json: { message: 'No customers updated yesterday' } }];\nreturn results;"
+      },
+      "id": "3d1f25e4-4ad4-4ae0-b221-c04163a6ba09",
+      "name": "Transform",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1296,
+        1088
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "operation": "insert",
+        "projectId": "mine-and-yours-analytics",
+        "datasetId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "raw_shopify"
+        },
+        "tableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "shopify_customers"
+        },
+        "options": {}
+      },
+      "id": "2be057d0-c421-4ebc-bd4f-19a3a1a04edf",
+      "name": "Insert \u2192 BQ",
+      "type": "n8n-nodes-base.googleBigQuery",
+      "typeVersion": 2,
+      "position": [
+        1552,
+        1088
+      ],
+      "credentials": {
+        "googleApi": {
+          "id": "dFX4xttq1VAPhWrA",
+          "name": "Google BigQuery Main"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 13
+            }
+          ]
+        }
+      },
+      "id": "44f421a5-4177-4713-b69e-c0dc85206046",
+      "name": "Daily 1PM Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        400,
+        880
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "6ab494a1-b0ff-4722-802c-45d4a9c4584c",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        400,
+        1776
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://mine-yours-co.myshopify.com/admin/api/2024-01/customers.json",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "created_at_min",
+              "value": "2026-01-01"
+            },
+            {
+              "name": "created_at_max",
+              "value": "2026-01-31"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Shopify-Access-Token",
+              "value": "REPLACE_WITH_SHOPIFY_ACCESS_TOKEN"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "b71a0613-7cb7-45fd-b85c-95e859fdb231",
+      "name": "Get First Page1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        656,
+        1776
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const resp = items[0].json;\nconst headers = resp.headers || {};\nconst body = resp.body || {};\nconst data = body.customers || [];\nconst linkHeader = headers.link || headers['Link'] || '';\nconst nextMatch = linkHeader.match(/<([^>]+)>; rel=\"next\"/);\nconst nextUrl = nextMatch ? nextMatch[1] : null;\nreturn [{ json: { allData: data, nextUrl: nextUrl, pageCount: 1 } }];"
+      },
+      "id": "3c546d7f-3ce8-43b9-a0fc-29d9786a16ea",
+      "name": "Initialize Pagination1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        896,
+        1776
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.nextUrl }}",
+              "operation": "isNotEmpty"
+            }
+          ]
+        }
+      },
+      "id": "63a3e868-072a-4c72-88b2-a9cd68c5d3c0",
+      "name": "Has More Pages?1",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        1104,
+        1776
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.nextUrl }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Shopify-Access-Token",
+              "value": "REPLACE_WITH_SHOPIFY_ACCESS_TOKEN"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "9cf323b5-906b-46d1-8da6-72f018741092",
+      "name": "Fetch Next Page1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1296,
+        1584
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const prev = $node[\"Has More Pages?1\"].json;\nconst curr = items[0].json;\nconst body = curr.body || {};\nconst newData = body.customers || [];\nconst allData = prev.allData.concat(newData);\nconst headers = curr.headers || {};\nconst linkHeader = headers.link || headers['Link'] || '';\nconst nextMatch = linkHeader.match(/<([^>]+)>; rel=\"next\"/);\nconst nextUrl = nextMatch ? nextMatch[1] : null;\nif (prev.pageCount >= 100) return [{ json: { allData: allData, nextUrl: null, pageCount: prev.pageCount + 1 } }];\nreturn [{ json: { allData: allData, nextUrl: nextUrl, pageCount: prev.pageCount + 1 } }];"
+      },
+      "id": "054900fe-3f99-4279-92be-8efe9d108f51",
+      "name": "Merge Pages1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1504,
+        1584
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const today = new Date().toISOString().split('T')[0];\nconst all = items[0].json.allData || [];\nconst results = [];\nfor (var i = 0; i < all.length; i++) {\n  var c = all[i];\n  var ordersCount = parseInt(c.orders_count) || 0;\n  var totalSpent = parseFloat(c.total_spent) || 0;\n  var addr = c.default_address || {};\n  results.push({ json: {\n    date: today,\n    customer_id: (c.id || '').toString(),\n    customer_first_name: c.first_name || '',\n    customer_last_name: c.last_name || '',\n    customer_created_at: c.created_at || null,\n    customer_updated_at: c.updated_at || null,\n    customer_currency: c.currency || '',\n    customer_default_address_city: addr.city || '',\n    customer_default_address_country: addr.country || '',\n    customer_default_address_country_code: addr.country_code || '',\n    customer_orders_count: ordersCount,\n    customer_total_spent: totalSpent,\n    customer_aov: ordersCount > 0 ? totalSpent / ordersCount : 0,\n    customer_is_returning: ordersCount > 1 ? 'True' : 'False',\n    customer_tags: c.tags || ''\n  }});\n}\nif (results.length === 0) return [{ json: { message: 'No customers found' } }];\nreturn results;"
+      },
+      "id": "9b50ec4b-c3ca-43bd-8807-554e0cba5c6e",
+      "name": "Transform1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1296,
+        1984
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "operation": "insert",
+        "projectId": "mine-and-yours-analytics",
+        "datasetId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "raw_shopify"
+        },
+        "tableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "shopify_customers"
+        },
+        "options": {}
+      },
+      "id": "af56dc22-7bf3-446b-9f75-625f3a3aa670",
+      "name": "Insert \u2192 BQ1",
+      "type": "n8n-nodes-base.googleBigQuery",
+      "typeVersion": 2,
+      "position": [
+        1552,
+        1984
+      ],
+      "credentials": {
+        "googleApi": {
+          "id": "dFX4xttq1VAPhWrA",
+          "name": "Google BigQuery Main"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Daily 1PM Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get First Page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get First Page": {
+      "main": [
+        [
+          {
+            "node": "Initialize Pagination",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Initialize Pagination": {
+      "main": [
+        [
+          {
+            "node": "Has More Pages?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has More Pages?": {
+      "main": [
+        [
+          {
+            "node": "Fetch Next Page",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Transform",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Next Page": {
+      "main": [
+        [
+          {
+            "node": "Merge Pages",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Pages": {
+      "main": [
+        [
+          {
+            "node": "Has More Pages?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transform": {
+      "main": [
+        [
+          {
+            "node": "Insert \u2192 BQ",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get First Page1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get First Page1": {
+      "main": [
+        [
+          {
+            "node": "Initialize Pagination1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Initialize Pagination1": {
+      "main": [
+        [
+          {
+            "node": "Has More Pages?1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has More Pages?1": {
+      "main": [
+        [
+          {
+            "node": "Fetch Next Page1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Transform1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Next Page1": {
+      "main": [
+        [
+          {
+            "node": "Merge Pages1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Pages1": {
+      "main": [
+        [
+          {
+            "node": "Has More Pages?1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transform1": {
+      "main": [
+        [
+          {
+            "node": "Insert \u2192 BQ1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "instanceId": "8cb571becb45836e8a44d1866949f895ec363ca3f69c545d19d13f3e85dd0baa"
+  }
+}
