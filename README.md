@@ -81,11 +81,3 @@ See `Meta Base Dashboards/` for every question and its SQL.
 
 ---
 
-## ⚠️ Security Note Before Pushing
-
-The pipeline JSONs and Python scripts contain **hardcoded credentials** (Shopify access token, BigQuery service-account private key). Before pushing to GitHub:
-
-1. **Make the repo PRIVATE**, or
-2. Replace secrets with placeholders (`SHOPIFY_TOKEN = "YOUR_TOKEN"`) and load from environment variables / Colab secrets.
-
-If the repo was ever public with these keys, rotate the Shopify token and the BigQuery service-account key immediately.
